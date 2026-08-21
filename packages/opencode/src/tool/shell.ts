@@ -21,6 +21,8 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { Elevation } from "./shell/elevation"
+import { which } from "@opencode-ai/core/util/which"
 
 export { Parameters } from "./shell/prompt"
 
@@ -425,10 +427,28 @@ export const ShellTool = Tool.define(
       }
     })
 
+    const elevate = Effect.fn("ShellTool.elevate")(function* (command: string, root: Node, enabled: boolean) {
+      if (!enabled || process.platform !== "linux") return
+      if (Elevation.sites(root).length === 0) return
+      const pkexec = which("pkexec")
+      const sudo = which("sudo")
+      if (!pkexec || !sudo) {
+        throw new Error(
+          'config "sudo.mode" is set to "pkexec" but pkexec or sudo was not found in PATH; elevated commands fail closed',
+        )
+      }
+      const rewritten = Elevation.rewrite(command, root, { pkexec, sudo })
+      if (!rewritten) return
+      yield* Effect.logInfo("elevating sudo via pkexec", { command: rewritten })
+      return rewritten
+    })
+
     const run = Effect.fn("ShellTool.run")(function* (
       input: {
         shell: string
         command: string
+        title?: string
+        elevated?: boolean
         cwd: string
         env: NodeJS.ProcessEnv
         timeout: number
@@ -559,6 +579,11 @@ export const ShellTool = Tool.define(
       ).pipe(Effect.orDie)
 
       const meta: string[] = []
+      if (input.elevated && code === Elevation.NOT_AUTHORIZED_EXIT) {
+        meta.push(
+          "elevated command was not authorized by polkit; the authentication window was dismissed, timed out, or no authentication agent is available",
+        )
+      }
       if (expired) {
         meta.push(
           `shell tool terminated command after exceeding timeout ${input.timeout} ms. If this command is expected to take longer and is not waiting for interactive input, retry with a larger timeout value in milliseconds.`,
@@ -583,11 +608,12 @@ export const ShellTool = Tool.define(
         output += "\n\n<shell_metadata>\n" + meta.join("\n") + "\n</shell_metadata>"
       }
       return {
-        title: input.command,
+        title: input.title ?? input.command,
         metadata: {
           output: last || preview(output),
           exit: code,
           truncated: cut,
+          ...(input.elevated ? { elevated: true } : {}),
           ...(cut && file ? { outputPath: file } : {}),
         },
         output,
@@ -617,6 +643,8 @@ export const ShellTool = Tool.define(
               }
               const timeout = params.timeout ?? defaultTimeoutMs
               const ps = Shell.ps(shell)
+              let command = params.command
+              let elevated = false
               yield* Effect.scoped(
                 Effect.gen(function* () {
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
@@ -625,13 +653,20 @@ export const ShellTool = Tool.define(
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan, params)
+                  const rewritten = yield* elevate(params.command, tree.rootNode, cfg.sudo?.mode === "pkexec")
+                  if (rewritten) {
+                    command = rewritten
+                    elevated = true
+                  }
                 }),
               )
 
               return yield* run(
                 {
                   shell,
-                  command: params.command,
+                  command,
+                  title: params.command,
+                  elevated,
                   cwd,
                   env: yield* shellEnv(ctx, cwd),
                   timeout,

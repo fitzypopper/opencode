@@ -126,6 +126,17 @@ export const Info = Schema.Struct({
   }),
   layout: Schema.optional(ConfigLayoutV1.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermissionV1.Info),
+  sudo: Schema.optional(
+    Schema.Struct({
+      mode: Schema.optional(Schema.Literals(["off", "pkexec"]).annotate({ identifier: "SudoMode" })).annotate({
+        description:
+          'How elevated (sudo) commands are executed. "off" runs them as-is, "pkexec" routes them through polkit so an authentication window appears instead of running headless. Linux only.',
+      }),
+    }),
+  ).annotate({
+    description:
+      "Configuration for commands that elevate privileges with sudo. When enabled, sudo is wrapped with pkexec so the user must authenticate via a GUI window; if authentication fails or pkexec is unavailable the command fails closed.",
+  }),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({
     description: "Attachment processing configuration, including image size limits and resizing behavior",

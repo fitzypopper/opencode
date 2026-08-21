@@ -165,6 +165,33 @@ OpenCode permissions are keyed by tool name, plus a couple of safety guards:
 
 ---
 
+## Elevated Commands
+
+By default, a `sudo` command runs as-is: without a terminal it either fails to prompt for a password or silently succeeds when passwordless sudo is configured — including in [auto mode](#auto-mode), where permission requests are approved automatically.
+
+Set `sudo.mode` to `"pkexec"` on Linux to require real authentication instead. OpenCode rewrites each `sudo` invocation in the command to run through [pkexec](https://polkit.pages.freedesktop.org/polkit/pkexec.html), so your desktop's polkit authentication window appears and the command only runs if you approve it:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "sudo": {
+    "mode": "pkexec"
+  }
+}
+```
+
+Behavior:
+
+- Every `sudo` occurrence in a compound command is wrapped individually, so pipelines like `whoami | sudo tee /etc/version` elevate only the parts that need it. Polkit typically remembers the authentication for the session, so multiple invocations usually trigger a single window.
+- Sudo flags like `-u` or `--preserve-env` keep working, since sudo itself is what gets wrapped.
+- If pkexec is not installed or no authentication agent is available, elevated commands **fail closed** with an error rather than falling back to headless execution.
+- Dismissing the authentication window fails the command with exit code 126.
+- On non-Linux platforms, or when the mode is unset (`"off"`), this setting does nothing.
+
+Permission rules still match against the original command text, so `bash` rules like `"sudo *"` continue to apply.
+
+---
+
 ## Defaults
 
 If you don’t specify anything, OpenCode starts from permissive defaults:
