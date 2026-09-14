@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE="$HOME/.config/opencode/sudo-policy"
+POLICIES="ask on off"
+
+usage() {
+  echo "Usage: opencode-sudo [ask|on|off|status]"
+  echo ""
+  echo "Toggle how opencode handles sudo commands."
+  echo ""
+  echo "  ask  - prompt in a GUI window every time (default)"
+  echo "  on   - run elevated commands automatically (cached credentials)"
+  echo "  off  - deny all sudo commands"
+  echo "  status - show current policy"
+  echo ""
+  echo "Current state file: $STATE"
+  exit 2
+}
+
+current() {
+  if [[ -f "$STATE" ]]; then
+    cat "$STATE" | tr -d '[:space:]'
+  else
+    echo "ask"
+  fi
+}
+
+case "${1:-}" in
+  ask|on|off)
+    mkdir -p "$(dirname "$STATE")"
+    echo "$1" > "$STATE"
+    echo "sudo policy set to: $1"
+    ;;
+  status)
+    echo "sudo policy: $(current)"
+    ;;
+  -h|--help|"")
+    usage
+    ;;
+  *)
+    echo "error: unknown policy '$1'" >&2
+    usage
+    ;;
+esac

@@ -23,6 +23,7 @@ import { testEffect } from "../lib/effect"
 
 const paths = { pkexec: "/usr/bin/pkexec", sudo: "/usr/bin/sudo" }
 const wrap = Elevation.wrap(paths)
+const wrapAccept = Elevation.wrapAccept(paths)
 
 let bashParser: Parser | undefined
 
@@ -56,7 +57,7 @@ const rewrite = async (command: string) => {
   const tree = await parser().then((p) => p.parse(command))
   if (!tree) throw new Error(`failed to parse: ${command}`)
   try {
-    return Elevation.rewrite(command, tree.rootNode, paths)
+    return Elevation.rewrite(command, tree.rootNode, wrap)
   } finally {
     tree.delete()
   }
@@ -145,6 +146,46 @@ describe("tool.shell elevation rewrite", () => {
   })
 })
 
+describe("tool.shell elevation policy", () => {
+  it("accept mode runs sudo non-interactively", async () => {
+    const tree = await parser().then((p) => p.parse("sudo apt install foo"))
+    if (!tree) throw new Error("failed to parse")
+    try {
+      expect(Elevation.rewrite("sudo apt install foo", tree.rootNode, wrapAccept)).toBe(
+        `${wrapAccept} apt install foo`,
+      )
+    } finally {
+      tree.delete()
+    }
+  })
+
+  const resolvePolicy = (
+    args: [string | undefined, string | undefined, string | undefined],
+  ) => Elevation.resolvePolicy(args[0], args[1], args[2])
+
+  it("defaults to ask when nothing is set", () => {
+    expect(resolvePolicy([undefined, undefined, undefined])).toBe("ask")
+  })
+
+  it("prefers env override over file and config", () => {
+    expect(resolvePolicy(["ask", "on", "off"])).toBe("on")
+  })
+
+  it("prefers file toggle over config default", () => {
+    expect(resolvePolicy(["ask", undefined, "off"])).toBe("off")
+  })
+
+  it("uses config default when no override or file", () => {
+    expect(resolvePolicy(["off", undefined, undefined])).toBe("off")
+  })
+
+  it("falls back to ask for unknown values", () => {
+    expect(resolvePolicy(["ask", "bogus", "on"])).toBe("on")
+    expect(resolvePolicy(["ask", "bogus", undefined])).toBe("ask")
+    expect(resolvePolicy(["off", "bogus", "bogus"])).toBe("off")
+  })
+})
+
 describe("tool.shell elevation config", () => {
   const decode = (input: unknown) => {
     try {
@@ -161,6 +202,20 @@ describe("tool.shell elevation config", () => {
 
   it("defaults to unset", () => {
     expect(decode({})?.sudo).toBeUndefined()
+  })
+
+  it("decodes sudo.policy ask/on/off", () => {
+    expect(decode({ sudo: { policy: "ask" } })?.sudo?.policy).toBe("ask")
+    expect(decode({ sudo: { policy: "on" } })?.sudo?.policy).toBe("on")
+    expect(decode({ sudo: { policy: "off" } })?.sudo?.policy).toBe("off")
+  })
+
+  it("defaults policy to ask", () => {
+    expect(decode({ sudo: { mode: "pkexec" } })?.sudo?.policy).toBeUndefined()
+  })
+
+  it("rejects unknown policies", () => {
+    expect(decode({ sudo: { policy: "always" } })).toBeUndefined()
   })
 
   it("rejects unknown modes", () => {
@@ -185,15 +240,33 @@ if (process.platform === "linux") {
           }),
       )
 
-    const fakePkexec = (logfile: string) =>
+    const withEnv = <A, E, R>(key: string, value: string, self: Effect.Effect<A, E, R>) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => process.env[key]),
+        (prev) =>
+          Effect.gen(function* () {
+            process.env[key] = value
+            return yield* self
+          }),
+        (prev) =>
+          Effect.sync(() => {
+            if (prev === undefined) delete process.env[key]
+            else process.env[key] = prev
+          }),
+      )
+
+    const fakeExe = (name: string, logfile: string) =>
       Effect.gen(function* () {
         const bin = yield* tmpdirScoped()
         yield* Effect.promise(() =>
-          fs.writeFile(path.join(bin, "pkexec"), `#!/bin/sh\necho "$@" >> "${logfile}"\nexit 0\n`),
+          fs.writeFile(path.join(bin, name), `#!/bin/sh\necho "$@" >> "${logfile}"\nexit 0\n`),
         )
-        yield* Effect.promise(() => fs.chmod(path.join(bin, "pkexec"), 0o755))
+        yield* Effect.promise(() => fs.chmod(path.join(bin, name), 0o755))
         return bin
       })
+
+    const fakePkexec = (logfile: string) => fakeExe("pkexec", logfile)
+    const fakeSudo = (logfile: string) => fakeExe("sudo", logfile)
 
     eit.live("leaves commands untouched when mode is off", () =>
       Effect.gen(function* () {
@@ -214,21 +287,61 @@ if (process.platform === "linux") {
         const log = path.join(os.tmpdir(), `pkexec-log-${Math.random().toString(36).slice(2)}`)
         const bin = yield* fakePkexec(log)
         const tmp = yield* tmpdirScoped({ config: { sudo: { mode: "pkexec" } } })
-        yield* withPath(
-          bin,
-          runIn(
-            tmp,
-            Effect.gen(function* () {
-              const result = yield* run({ command: "sudo true" })
-              const meta = result.metadata as { elevated?: boolean; exit?: number }
-              expect(meta.elevated).toBe(true)
-              expect(meta.exit).toBe(0)
-              expect(result.title).toBe("sudo true")
-              const logged = yield* Effect.promise(() => fs.readFile(log, "utf8"))
-              expect(logged.trim()).toBe(`--disable-internal-agent /usr/bin/sudo -n true`)
-            }),
+        yield* withEnv(
+          "OPENCODE_SUDO_POLICY",
+          "ask",
+          withPath(
+            bin,
+            runIn(
+              tmp,
+              Effect.gen(function* () {
+                const result = yield* run({ command: "sudo true" })
+                const meta = result.metadata as { elevated?: boolean; exit?: number }
+                expect(meta.elevated).toBe(true)
+                expect(meta.exit).toBe(0)
+                expect(result.title).toBe("sudo true")
+                const logged = yield* Effect.promise(() => fs.readFile(log, "utf8"))
+                expect(logged.trim()).toBe(`--disable-internal-agent /usr/bin/sudo -n true`)
+              }),
+            ),
           ),
         )
+      }),
+    )
+
+    eit.live("policy on runs sudo with cached credentials only", () =>
+      Effect.gen(function* () {
+        const log = path.join(os.tmpdir(), `sudo-log-${Math.random().toString(36).slice(2)}`)
+        const bin = yield* fakeSudo(log)
+        const tmp = yield* tmpdirScoped({ config: { sudo: { mode: "pkexec" } } })
+        yield* withEnv(
+          "OPENCODE_SUDO_POLICY",
+          "on",
+          withPath(
+            bin,
+            runIn(
+              tmp,
+              Effect.gen(function* () {
+                const result = yield* run({ command: "sudo true" })
+                const meta = result.metadata as { elevated?: boolean; exit?: number }
+                expect(meta.elevated).toBe(true)
+                expect(meta.exit).toBe(0)
+                const logged = yield* Effect.promise(() => fs.readFile(log, "utf8"))
+                expect(logged.trim()).toContain("true")
+              }),
+            ),
+          ),
+        )
+      }),
+    )
+
+    eit.live("policy off denies the command before running", () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const error = yield* squash(
+          withEnv("OPENCODE_SUDO_POLICY", "off", runIn(tmp, run({ command: "sudo touch marker" }))),
+        )
+        expect(String(error)).toContain("denied")
       }),
     )
 

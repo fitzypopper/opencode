@@ -14,6 +14,7 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@opencode-ai/core/shell"
 import { ShellID } from "./shell/id"
+import { Global } from "@opencode-ai/core/global"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
@@ -427,17 +428,38 @@ export const ShellTool = Tool.define(
       }
     })
 
-    const elevate = Effect.fn("ShellTool.elevate")(function* (command: string, root: Node, enabled: boolean) {
-      if (!enabled || process.platform !== "linux") return
+    const elevate = Effect.fn("ShellTool.elevate")(function* (
+      command: string,
+      root: Node,
+      sudoCfg: { mode?: string; policy?: string },
+    ) {
+      if (process.platform !== "linux") return
       if (Elevation.sites(root).length === 0) return
-      const pkexec = which("pkexec")
+      const statePath = path.join(Global.Path.config, "sudo-policy")
+      const state = yield* Effect.tryPromise(() => Bun.file(statePath).text()).pipe(
+        Effect.map((t) => t.trim()),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const policy = Elevation.resolvePolicy(sudoCfg.policy, process.env.OPENCODE_SUDO_POLICY, state)
+      if (policy === "off") {
+        throw new Error(Elevation.DENIED_MESSAGE)
+      }
       const sudo = which("sudo")
-      if (!pkexec || !sudo) {
+      if (!sudo) throw new Error('cannot elevate: "sudo" was not found in PATH; elevated commands fail closed')
+      if (policy === "on") {
+        const rewritten = Elevation.rewrite(command, root, Elevation.wrapAccept({ sudo }))
+        if (!rewritten) return
+        yield* Effect.logInfo("elevating sudo (policy on, cached credentials)", { command: rewritten })
+        return rewritten
+      }
+      if (sudoCfg.mode !== "pkexec") return
+      const pkexec = which("pkexec")
+      if (!pkexec) {
         throw new Error(
-          'config "sudo.mode" is set to "pkexec" but pkexec or sudo was not found in PATH; elevated commands fail closed',
+          'config "sudo.mode" is set to "pkexec" but pkexec was not found in PATH; elevated commands fail closed',
         )
       }
-      const rewritten = Elevation.rewrite(command, root, { pkexec, sudo })
+      const rewritten = Elevation.rewrite(command, root, Elevation.wrap({ pkexec, sudo }))
       if (!rewritten) return
       yield* Effect.logInfo("elevating sudo via pkexec", { command: rewritten })
       return rewritten
@@ -653,7 +675,7 @@ export const ShellTool = Tool.define(
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan, params)
-                  const rewritten = yield* elevate(params.command, tree.rootNode, cfg.sudo?.mode === "pkexec")
+                  const rewritten = yield* elevate(params.command, tree.rootNode, cfg.sudo ?? {})
                   if (rewritten) {
                     command = rewritten
                     elevated = true

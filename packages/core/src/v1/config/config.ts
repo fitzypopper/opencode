@@ -132,10 +132,14 @@ export const Info = Schema.Struct({
         description:
           'How elevated (sudo) commands are executed. "off" runs them as-is, "pkexec" routes them through polkit so an authentication window appears instead of running headless. Linux only.',
       }),
+      policy: Schema.optional(Schema.Literals(["ask", "on", "off"]).annotate({ identifier: "SudoPolicy" })).annotate({
+        description:
+          'Default policy for sudo commands: "ask" prompts for an authentication window every time, "on" runs them automatically with cached credentials, "off" denies them without executing. May be overridden at runtime without restart by writing "ask", "on", or "off" to the sudo-policy file in the config directory (e.g. via `opencode-sudo`).',
+      }),
     }),
   ).annotate({
     description:
-      "Configuration for commands that elevate privileges with sudo. When enabled, sudo is wrapped with pkexec so the user must authenticate via a GUI window; if authentication fails or pkexec is unavailable the command fails closed.",
+      "Configuration for commands that elevate privileges with sudo. When enabled, sudo is wrapped and the user must authenticate via a GUI window; if authentication fails or pkexec is unavailable the command fails closed.",
   }),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({

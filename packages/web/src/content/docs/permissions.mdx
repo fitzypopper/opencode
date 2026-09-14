@@ -180,13 +180,44 @@ Set `sudo.mode` to `"pkexec"` on Linux to require real authentication instead. O
 }
 ```
 
-Behavior:
+### Runtime Policy Toggle
+
+`sudo.policy` controls how the agent handles sudo commands at runtime, with three modes:
+
+| Policy | Behavior |
+|--------|----------|
+| `"ask"` | Prompt in a GUI window every time (default when `mode` is `"pkexec"`) |
+| `"on"` | Run elevated commands automatically using cached credentials (`sudo -n`) |
+| `"off"` | Deny all sudo commands without executing them |
+
+```json title="opencode.json"
+{
+  "sudo": {
+    "mode": "pkexec",
+    "policy": "ask"
+  }
+}
+```
+
+Toggle at runtime without restarting by writing to the state file:
+
+```bash
+opencode-sudo on    # auto-accept with cached credentials
+opencode-sudo off   # deny all sudo commands
+opencode-sudo ask   # prompt every time (default)
+opencode-sudo status # show current policy
+```
+
+The `opencode-sudo` helper is available as a slash command: type `/sudo on`, `/sudo off`, or `/sudo ask` in the TUI.
+
+### Behavior
 
 - Every `sudo` occurrence in a compound command is wrapped individually, so pipelines like `whoami | sudo tee /etc/version` elevate only the parts that need it. Polkit typically remembers the authentication for the session, so multiple invocations usually trigger a single window.
 - Sudo flags like `-u` or `--preserve-env` keep working, since sudo itself is what gets wrapped.
 - If pkexec is not installed or no authentication agent is available, elevated commands **fail closed** with an error rather than falling back to headless execution.
 - Dismissing the authentication window fails the command with exit code 126.
 - On non-Linux platforms, or when the mode is unset (`"off"`), this setting does nothing.
+- `OPENCODE_SUDO_POLICY` env var overrides the file-based toggle (useful for testing or session-level overrides).
 
 Permission rules still match against the original command text, so `bash` rules like `"sudo *"` continue to apply.
 
