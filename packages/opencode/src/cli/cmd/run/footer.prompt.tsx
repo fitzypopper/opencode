@@ -48,7 +48,7 @@ type Auto = RunFooterMenuItem & {
 type SlashOption = RunFooterMenuItem & {
   kind: "slash"
   name: string
-  action?: "skill-menu" | "editor"
+  action?: "skill-menu" | "editor" | "sudo"
 }
 
 type PromptOption = Auto | SlashOption
@@ -76,6 +76,7 @@ type PromptInput = {
   onExitRequest?: () => boolean
   onExit: () => void
   onSkillMenu: () => void
+  onSudoMenu: () => void
   onRows: (rows: number) => void
   onStatus: (text: string) => void
 }
@@ -415,6 +416,13 @@ export function createPromptState(input: PromptInput): PromptState {
         name: "editor",
         display: "/editor",
         description: "compose in your external editor",
+      } satisfies SlashOption,
+      {
+        kind: "slash",
+        action: "sudo" as const,
+        name: "sudo",
+        display: "/sudo",
+        description: "switch sudo policy",
       } satisfies SlashOption,
       { kind: "slash", name: "new", display: "/new", description: "start a new session" } satisfies SlashOption,
       { kind: "slash", name: "exit", display: "/exit", description: "close OpenCode" } satisfies SlashOption,
@@ -856,6 +864,12 @@ export function createPromptState(input: PromptInput): PromptState {
       if (next.action === "skill-menu") {
         cancelAutocomplete()
         input.onSkillMenu()
+        return
+      }
+
+      if (next.action === "sudo") {
+        cancelAutocomplete()
+        input.onSudoMenu()
         return
       }
 

@@ -387,6 +387,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     onExitRequest: props.onExitRequest,
     onExit: props.onExit,
     onSkillMenu: openSkillMenu,
+    onSudoMenu: openSudo,
     onRows: props.onRows,
     onStatus: props.onStatus,
   })
