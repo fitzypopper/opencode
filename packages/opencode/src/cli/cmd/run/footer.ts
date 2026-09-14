@@ -79,6 +79,7 @@ type RunFooterOptions = {
   modelLabel: string
   model: RunInput["model"]
   variant: string | undefined
+  sudoPolicy?: string
   first: boolean
   history?: RunPrompt[]
   theme: RunTheme
@@ -192,6 +193,8 @@ export class RunFooter implements FooterApi {
   private setVariants: Setter<string[]>
   private currentVariant: Accessor<string | undefined>
   private setCurrentVariant: Setter<string | undefined>
+  private currentSudoPolicy: Accessor<string>
+  private setCurrentSudoPolicy: Setter<string>
   private theme: Accessor<RunTheme>
   private setTheme: Setter<RunTheme>
   private state: Accessor<FooterState>
@@ -273,6 +276,9 @@ export class RunFooter implements FooterApi {
     const [currentVariant, setCurrentVariant] = createSignal(options.variant)
     this.currentVariant = currentVariant
     this.setCurrentVariant = setCurrentVariant
+    const [currentSudoPolicy, setCurrentSudoPolicy] = createSignal(options.sudoPolicy ?? "ask")
+    this.currentSudoPolicy = currentSudoPolicy
+    this.setCurrentSudoPolicy = setCurrentSudoPolicy
     const [theme, setTheme] = createSignal(options.theme)
     this.theme = theme
     this.setTheme = setTheme
@@ -337,6 +343,8 @@ export class RunFooter implements FooterApi {
               onExit: () => footer.close(),
               onModelSelect: footer.handleModelSelect,
               onVariantSelect: footer.handleVariantSelect,
+              currentSudoPolicy: footer.currentSudoPolicy,
+              onSudoPolicySelect: footer.handleSudoPolicySelect,
               onRows: footer.syncRows,
               onLayout: footer.syncLayout,
               onStatus: footer.setStatus,
@@ -902,6 +910,24 @@ export class RunFooter implements FooterApi {
         }
       })
       .catch(() => {})
+  }
+
+  private handleSudoPolicySelect = (policy: string): void => {
+    if (this.isClosed) return
+    this.setCurrentSudoPolicy(policy)
+    const fs = require("fs") as typeof import("fs")
+    const path = require("path") as typeof import("path")
+    const statePath = path.join(
+      process.env.HOME ?? "~",
+      ".config",
+      "opencode",
+      "sudo-policy",
+    )
+    try {
+      fs.mkdirSync(path.dirname(statePath), { recursive: true })
+      fs.writeFileSync(statePath, policy + "\n")
+    } catch {}
+    this.setNotice(`Sudo policy: ${policy}`)
   }
 
   private clearInterruptTimer(): void {

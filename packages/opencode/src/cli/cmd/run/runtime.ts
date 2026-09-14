@@ -242,6 +242,16 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     agent: state.agent,
     model: state.model,
     variant: state.activeVariant,
+    sudoPolicy: (() => {
+      try {
+        const fs = require("fs") as typeof import("fs")
+        const path = require("path") as typeof import("path")
+        const statePath = path.join(process.env.HOME ?? "~", ".config", "opencode", "sudo-policy")
+        return fs.readFileSync(statePath, "utf8").trim()
+      } catch {
+        return "ask"
+      }
+    })(),
     tuiConfig,
     backgroundSubagents: input.backgroundSubagents,
     onPermissionReply: async (next) => {

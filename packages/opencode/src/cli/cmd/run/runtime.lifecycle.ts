@@ -64,6 +64,7 @@ export type LifecycleInput = {
   agent: string | undefined
   model: RunInput["model"]
   variant: string | undefined
+  sudoPolicy?: string
   tuiConfig: RunTuiConfig
   backgroundSubagents: boolean
   onPermissionReply: (input: PermissionReply) => void | Promise<void>
@@ -238,6 +239,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       ...labels,
       model: input.model,
       variant: input.variant,
+      sudoPolicy: input.sudoPolicy,
       first: input.first,
       history: input.history,
       theme,

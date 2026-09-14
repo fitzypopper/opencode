@@ -211,6 +211,8 @@ async function renderFooter(
           onExit={() => {}}
           onModelSelect={() => {}}
           onVariantSelect={() => {}}
+          currentSudoPolicy={() => "ask"}
+          onSudoPolicySelect={() => {}}
           onRows={() => {}}
           onLayout={() => {}}
           onStatus={() => {}}
@@ -383,6 +385,8 @@ test("direct command panel renders grouped command palette", async () => {
           onQueued={() => {}}
           onVariant={() => {}}
           onVariantCycle={() => {}}
+          onSudo={() => {}}
+          currentSudoPolicy={() => "ask"}
           onCommand={() => {}}
           onNew={() => {}}
           onExit={() => {}}
@@ -524,6 +528,8 @@ test("direct command panel shows subagent entry when available", async () => {
           onQueued={() => {}}
           onVariant={() => {}}
           onVariantCycle={() => {}}
+          onSudo={() => {}}
+          currentSudoPolicy={() => "ask"}
           onCommand={() => {}}
           onNew={() => {}}
           onExit={() => {}}
@@ -572,6 +578,8 @@ test("direct command panel keeps completed subagents available", async () => {
           onQueued={() => {}}
           onVariant={() => {}}
           onVariantCycle={() => {}}
+          onSudo={() => {}}
+          currentSudoPolicy={() => "ask"}
           onCommand={() => {}}
           onNew={() => {}}
           onExit={() => {}}
@@ -1000,6 +1008,8 @@ test("direct footer shows editable prompts and additional queued work while runn
           onExit={() => {}}
           onModelSelect={() => {}}
           onVariantSelect={() => {}}
+          currentSudoPolicy={() => "ask"}
+          onSudoPolicySelect={() => {}}
           onRows={() => {}}
           onLayout={() => {}}
           onStatus={() => {}}

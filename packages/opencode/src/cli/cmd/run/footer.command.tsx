@@ -21,6 +21,7 @@ type CommandEntry =
   | (PanelEntry & { action: "variant.cycle" })
   | (PanelEntry & { action: "variant.list" })
   | (PanelEntry & { action: "slash"; name: string })
+  | (PanelEntry & { action: "sudo" })
   | (PanelEntry & { action: "exit" })
 
 type ModelEntry = PanelEntry & {
@@ -346,6 +347,8 @@ export function RunCommandMenuBody(props: {
   onQueued: () => void
   onVariant: () => void
   onVariantCycle: () => void
+  onSudo: () => void
+  currentSudoPolicy: Accessor<string>
   onCommand: (name: string) => void
   onNew: () => void
   onExit: () => void
@@ -407,6 +410,13 @@ export function RunCommandMenuBody(props: {
         action: "model",
         category: "Agent",
         display: "Switch model",
+      },
+      {
+        action: "sudo",
+        category: "Agent",
+        display: "Switch sudo policy",
+        footer: `Currently: ${props.currentSudoPolicy()}`,
+        keywords: "sudo policy pkexec ask on off elevated",
       },
       ...(props.queued().length > 0
         ? [
@@ -501,6 +511,11 @@ export function RunCommandMenuBody(props: {
 
     if (item.action === "variant.list") {
       props.onVariant()
+      return
+    }
+
+    if (item.action === "sudo") {
+      props.onSudo()
       return
     }
 
@@ -1062,6 +1077,82 @@ export function RunModelSelectBody(props: {
         paddingLeft={PANEL_PAD}
         paddingRight={PANEL_PAD}
         grouped={!query().trim()}
+        background
+        headerColor={props.theme().muted}
+      />
+    </PanelShell>
+  )
+}
+
+type SudoEntry = PanelEntry & {
+  policy: string
+  current: boolean
+}
+
+export function RunSudoSelectBody(props: {
+  theme: Accessor<RunFooterTheme>
+  currentPolicy: string
+  onClose: () => void
+  onSelect: (policy: string) => void
+}) {
+  let field: InputRenderable | undefined
+  const policies = ["ask", "on", "off"]
+  const descriptions: Record<string, string> = {
+    ask: "Prompt in GUI window every time",
+    on: "Run with cached credentials",
+    off: "Deny all sudo commands",
+  }
+  const entries = createMemo<SudoEntry[]>(() =>
+    policies.map((p) => ({
+      policy: p,
+      category: "Sudo",
+      display: p,
+      footer: p === props.currentPolicy ? "current" : descriptions[p],
+      keywords: `sudo ${p} ${descriptions[p]}`,
+      current: p === props.currentPolicy,
+    })),
+  )
+  const menu = createFooterMenuState({ count: () => entries().length, limit: PANEL_LIST_ROWS })
+  const pick = (item: SudoEntry) => {
+    props.onSelect(item.policy)
+  }
+  const select = () => {
+    const item = entries()[menu.selected()]
+    if (!item) return
+    pick(item)
+  }
+
+  useKeyboard((event) => {
+    if (event.defaultPrevented) return
+    handleKey({ event, menu, field: () => field, setQuery: () => {}, select, close: props.onClose })
+  })
+
+  return (
+    <PanelShell
+      title="Sudo policy"
+      query=""
+      count={entries().length}
+      total={entries().length}
+      placeholder=""
+      theme={props.theme}
+      inputRef={(input) => {
+        field = input
+      }}
+      onQuery={() => {}}
+      dark
+      chrome="minimal"
+    >
+      <RunFooterMenu
+        theme={props.theme}
+        items={entries}
+        selected={menu.selected}
+        offset={menu.offset}
+        rows={() => PANEL_LIST_ROWS}
+        limit={PANEL_LIST_ROWS}
+        empty="No policies"
+        border={false}
+        paddingLeft={PANEL_PAD}
+        paddingRight={PANEL_PAD}
         background
         headerColor={props.theme().muted}
       />

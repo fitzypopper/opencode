@@ -18,6 +18,7 @@ import {
   RunModelSelectBody,
   RunQueuedPromptSelectBody,
   RunSkillSelectBody,
+  RunSudoSelectBody,
   RunSubagentSelectBody,
   RunVariantSelectBody,
 } from "./footer.command"
@@ -106,6 +107,8 @@ type RunFooterViewProps = {
   onExit: () => void
   onModelSelect: (model: NonNullable<RunInput["model"]>) => void
   onVariantSelect: (variant: string | undefined) => void
+  currentSudoPolicy: () => string
+  onSudoPolicySelect: (policy: string) => void
   onRows: (rows: number) => void
   onLayout: (input: { route: FooterPromptRoute; autocomplete: boolean; subagentRows: number }) => void
   onStatus: (text: string) => void
@@ -142,6 +145,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   const skilling = createMemo(() => active().type === "prompt" && route().type === "skill")
   const modeling = createMemo(() => active().type === "prompt" && route().type === "model")
   const varianting = createMemo(() => active().type === "prompt" && route().type === "variant")
+  const sudoing = createMemo(() => active().type === "prompt" && route().type === "sudo")
   const panel = createMemo(
     () =>
       active().type === "permission" ||
@@ -151,7 +155,8 @@ export function RunFooterView(props: RunFooterViewProps) {
       commanding() ||
       skilling() ||
       modeling() ||
-      varianting(),
+      varianting() ||
+      sudoing(),
   )
   const selected = createMemo(() => {
     const current = route()
@@ -308,6 +313,11 @@ export function RunFooterView(props: RunFooterViewProps) {
 
   const openVariant = () => {
     setRoute({ type: "variant" })
+    props.onSubagentSelect?.(undefined)
+  }
+
+  const openSudo = () => {
+    setRoute({ type: "sudo" })
     props.onSubagentSelect?.(undefined)
   }
 
@@ -724,6 +734,8 @@ export function RunFooterView(props: RunFooterViewProps) {
                               props.onCycle()
                               closePanel()
                             }}
+                            onSudo={openSudo}
+                            currentSudoPolicy={props.currentSudoPolicy}
                             onCommand={(name) => {
                               composer.submitText(`/${name}`)
                               closePanel()
@@ -773,6 +785,17 @@ export function RunFooterView(props: RunFooterViewProps) {
                             onClose={closePanel}
                             onSelect={(variant) => {
                               props.onVariantSelect(variant)
+                              closePanel()
+                            }}
+                          />
+                        </Match>
+                        <Match when={sudoing()}>
+                          <RunSudoSelectBody
+                            theme={theme}
+                            currentPolicy={props.currentSudoPolicy()}
+                            onClose={closePanel}
+                            onSelect={(policy) => {
+                              props.onSudoPolicySelect(policy)
                               closePanel()
                             }}
                           />
